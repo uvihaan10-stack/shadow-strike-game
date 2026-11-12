@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#090d1b">
+<title>Shadow Strike — Neon Arena</title>
+<style>
+:root{--cyan:#55f6e8;--pink:#ff4f9a;--gold:#ffd166;--bg:#090d1b}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:#f4f7ff;font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;touch-action:none}
+body{background:radial-gradient(ellipse at 50% 20%,#17274a 0%,#090d1b 65%)}
+canvas{display:block;width:100vw;height:100vh}
+#hud{position:fixed;inset:0;pointer-events:none;padding:18px;display:flex;justify-content:space-between;align-items:flex-start}
+.pill{background:#101a30cc;border:1px solid #4ce9df55;border-radius:14px;padding:9px 13px;box-shadow:0 0 22px #20e5dc18;backdrop-filter:blur(8px);font-weight:800;letter-spacing:.08em;font-size:12px}
+.pill span{color:var(--cyan);font-size:16px;margin-left:7px}
+#health{position:fixed;top:68px;left:18px;width:160px;height:8px;border-radius:9px;background:#27334d;overflow:hidden}
+#healthFill{height:100%;width:100%;background:linear-gradient(90deg,#55f6e8,#8dff9d);transition:width .15s}
+#overlay{position:fixed;inset:0;display:grid;place-items:center;background:#050916a8;backdrop-filter:blur(8px);padding:20px}
+.panel{width:min(440px,94vw);text-align:center;padding:30px 24px;border:1px solid #55f6e866;border-radius:26px;background:linear-gradient(145deg,#152440f2,#0b1225f2);box-shadow:0 20px 80px #0009,0 0 45px #31e8dc20}
+.logo{font-size:clamp(32px,9vw,54px);font-weight:1000;line-height:.95;letter-spacing:-.06em;text-transform:uppercase;text-shadow:0 0 25px #55f6e855}
+.logo b{color:var(--cyan)}.sub{color:#a9bad5;line-height:1.55;margin:16px 0 22px;font-size:14px}
+button{border:0;cursor:pointer;font:inherit}
+.primary{pointer-events:auto;background:linear-gradient(100deg,#45e8df,#8dffb2);color:#071321;font-weight:1000;letter-spacing:.1em;border-radius:13px;padding:15px 28px;min-width:190px;box-shadow:0 8px 28px #43eee944}
+.secondary{pointer-events:auto;background:#1c2a45;color:#dbeaff;border:1px solid #526887;border-radius:12px;padding:11px 18px;margin:8px}
+.tiny{font-size:11px;color:#8498b7;margin-top:17px}
+#touch{position:fixed;bottom:20px;left:0;right:0;display:none;justify-content:space-between;padding:0 22px;pointer-events:none}
+.pad{display:flex;gap:10px}.touchbtn{pointer-events:auto;width:58px;height:58px;border-radius:18px;background:#13233bcc;border:1px solid #55f6e877;color:#eaffff;font-size:23px;font-weight:900;box-shadow:0 0 20px #55f6e822;touch-action:none}
+#toast{position:fixed;top:22%;left:0;right:0;text-align:center;font-weight:1000;letter-spacing:.12em;color:var(--gold);text-shadow:0 0 20px #ffd16688;pointer-events:none;opacity:0;transition:opacity .2s}
+@media (pointer:coarse){#touch{display:flex}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div><div class="pill">SHIELDS <span id="hp">100</span></div><div id="health"><div id="healthFill"></div></div></div>
+  <div class="pill">SCORE <span id="score">00000</span></div>
+  <div class="pill">WAVE <span id="wave">01</span></div>
+</div>
+<div id="toast"></div>
+<div id="touch">
+  <div class="pad"><button class="touchbtn" id="left">◀</button><button class="touchbtn" id="right">▶</button></div>
+  <div class="pad"><button class="touchbtn" id="fire">✦</button></div>
+</div>
+<div id="overlay">
+  <div class="panel">
+    <div class="logo">SHADOW<br><b>STRIKE</b></div>
+    <div class="sub" id="desc">NEON ARENA<br>Defend the city. Survive the waves. Become the legend.<br><br>Move with <b>A / D</b> or arrow keys. Shoot with <b>SPACE</b>.</div>
+    <button class="primary" id="start">START MISSION</button>
+    <div class="tiny">ARCADE ACTION • MOBILE + DESKTOP • NO INSTALL REQUIRED</div>
+  </div>
+</div>
+<script>
+(()=>{
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,dpr,player,bullets,enemies,particles,keys={},score=0,wave=1,running=false,last=0,spawn=0,fireCd=0,enemyShots=[],shake=0;
+const $=id=>document.getElementById(id);
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function reset(){player={x:W/2,y:H-90,w:34,h:38,hp:100,inv:0};bullets=[];enemies=[];particles=[];enemyShots=[];score=0;wave=1;spawn=0;fireCd=0;shake=0;updateHud()}
+function updateHud(){$('hp').textContent=Math.max(0,Math.ceil(player?.hp||100));$('healthFill').style.width=Math.max(0,player?.hp||100)+'%';$('score').textContent=String(score).padStart(5,'0');$('wave').textContent=String(wave).padStart(2,'0')}
+function burst(x,y,color,n=12){for(let i=0;i<n;i++){let a=Math.random()*Math.PI*2,s=1+Math.random()*4;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:25+Math.random()*25,color,r:1+Math.random()*3})}}
+function shoot(){if(fireCd>0)return;bullets.push({x:player.x,y:player.y-22,vy:-10});fireCd=11}
+function spawnEnemy(){let tough=Math.random()<Math.min(.12+wave*.025,.4);enemies.push({x:30+Math.random()*(W-60),y:-35,hp:tough?3:1,max:tough?3:1,r:tough?19:14,v:1.1+Math.random()*.9+wave*.12,phase:Math.random()*6.28,tough})}
+function endGame(){running=false;$('overlay').style.display='grid';$('desc').innerHTML=`MISSION OVER<br>Your score: <b style="color:#55f6e8">${score}</b><br>You reached wave ${wave}.<br><br>Ready for another run?`;$('start').textContent='PLAY AGAIN'}
+function drawShip(x,y){ctx.save();ctx.translate(x,y);ctx.shadowBlur=22;ctx.shadowColor='#55f6e8';ctx.fillStyle='#55f6e8';ctx.beginPath();ctx.moveTo(0,-23);ctx.lineTo(17,17);ctx.lineTo(0,9);ctx.lineTo(-17,17);ctx.closePath();ctx.fill();ctx.fillStyle='#f5ffff';ctx.beginPath();ctx.arc(0,-4,4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#ff4f9a';ctx.fillRect(-3,14,6,9);ctx.restore()}
+function frame(t){requestAnimationFrame(frame);let dt=Math.min((t-last)/16.67||1,2);last=t;
+ctx.save();if(shake>0){ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);shake*=.88}
+ctx.clearRect(-20,-20,W+40,H+40);
+let grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,'#101b35');grad.addColorStop(1,'#080d1c');ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
+ctx.strokeStyle='#5ce9e915';ctx.lineWidth=1;let offset=(t*.025)%42;for(let y=offset;y<H;y+=42){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}for(let x=0;x<W;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+for(let i=0;i<55;i++){let x=(i*137.5)%W,y=(i*83+t*.018)%(H);ctx.fillStyle='#b7d9ff55';ctx.fillRect(x,y,1.5,1.5)}
+if(running){
+if(keys.ArrowLeft||keys.a||keys.A)player.x-=6*dt;if(keys.ArrowRight||keys.d||keys.D)player.x+=6*dt;player.x=Math.max(22,Math.min(W-22,player.x));
+if(keys[' ']||keys.Space||keys.fire)shoot();fireCd=Math.max(0,fireCd-dt);player.inv=Math.max(0,player.inv-dt);
+spawn-=dt;if(spawn<=0){spawnEnemy();spawn=Math.max(19,58-wave*3)}
+if(score>=wave*500){wave++;toast('WAVE '+wave);spawn=Math.min(spawn,5)}
+for(let b of bullets){b.y+=b.vy*dt;ctx.shadowBlur=15;ctx.shadowColor='#55f6e8';ctx.fillStyle='#bafff8';ctx.fillRect(b.x-2,b.y-10,4,15);ctx.shadowBlur=0}
+bullets=bullets.filter(b=>b.y>-20);
+for(let e of enemies){e.phase+=.025*dt;e.y+=e.v*dt;e.x+=Math.sin(e.phase)*.8*dt;ctx.save();ctx.translate(e.x,e.y);ctx.shadowBlur=20;ctx.shadowColor=e.tough?'#ff4f9a':'#ffb454';ctx.fillStyle=e.tough?'#ff4f9a':'#ffb454';ctx.beginPath();for(let k=0;k<6;k++){let a=k*Math.PI/3;ctx.lineTo(Math.cos(a)*e.r,Math.sin(a)*e.r)}ctx.closePath();ctx.fill();ctx.fillStyle='#1b1730';ctx.beginPath();ctx.arc(-5,-2,3,0,6.28);ctx.arc(5,-2,3,0,6.28);ctx.fill();ctx.restore();
+if(Math.random()<.0015*dt){enemyShots.push({x:e.x,y:e.y+10,vy:4+wave*.1})}
+if(e.y>H-70){e.y=-50;player.hp-=10;shake=7;burst(player.x,player.y,'#ff4f9a',10);updateHud();if(player.hp<=0)endGame()}}
+for(let i=enemies.length-1;i>=0;i--){let e=enemies[i],hit=false;for(let j=bullets.length-1;j>=0;j--){let b=bullets[j];if(Math.hypot(e.x-b.x,e.y-b.y)<e.r+7){bullets.splice(j,1);e.hp--;burst(b.x,b.y,'#55f6e8',4);if(e.hp<=0){score+=e.tough?80:30;burst(e.x,e.y,e.tough?'#ff4f9a':'#ffb454',18);enemies.splice(i,1);hit=true;updateHud()}break}}}
+for(let s of enemyShots){s.y+=s.vy*dt;ctx.shadowBlur=12;ctx.shadowColor='#ff4f9a';ctx.fillStyle='#ff8ab9';ctx.beginPath();ctx.arc(s.x,s.y,4,0,6.28);ctx.fill();ctx.shadowBlur=0;if(Math.hypot(s.x-player.x,s.y-player.y)<18&&player.inv<=0){player.hp-=8;player.inv=28;shake=6;burst(player.x,player.y,'#ff4f9a',8);updateHud();if(player.hp<=0)endGame()}}
+enemyShots=enemyShots.filter(s=>s.y<H+10);
+drawShip(player.x,player.y);
+}
+for(let p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.98;p.vy*=.98;p.life-=dt;ctx.globalAlpha=Math.max(0,p.life/45);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.28);ctx.fill()}ctx.globalAlpha=1;particles=particles.filter(p=>p.life>0);
+ctx.restore();
+}
+requestAnimationFrame(frame);
+function toast(msg){$('toast').textContent=msg;$('toast').style.opacity=1;setTimeout(()=>$('toast').style.opacity=0,1000)}
+$('start').onclick=()=>{reset();running=true;$('overlay').style.display='none';toast('DEFEND THE CITY')};
+addEventListener('keydown',e=>{keys[e.key]=true;if([' ','ArrowLeft','ArrowRight'].includes(e.key))e.preventDefault()});
+addEventListener('keyup',e=>keys[e.key]=false);
+function bind(id,key){let el=$(id);el.addEventListener('pointerdown',e=>{e.preventDefault();keys[key]=true;el.setPointerCapture(e.pointerId)});['pointerup','pointercancel','lostpointercapture'].forEach(ev=>el.addEventListener(ev,()=>keys[key]=false))}
+bind('left','ArrowLeft');bind('right','ArrowRight');bind('fire',' ');
+})();
+</script>
+</body></html>
